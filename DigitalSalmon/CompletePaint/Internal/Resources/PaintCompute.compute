@@ -1,0 +1,133 @@
+﻿// Kernels
+#pragma kernel CSMain
+
+// Buffers
+RWTexture2D<float4> Result;
+Texture2D<float4> CanvasBuffer;
+
+float2 CanvasSize;
+
+int StampBufferSize;
+RWStructuredBuffer<float4> StampRect;
+RWStructuredBuffer<float> StampRotation;
+float4 StampTint;
+
+bool Subtractive;
+
+Texture2D StampTexture;
+float2 StampTextureSize;
+
+// Functions
+
+float Modulas(float input, float divisor) {
+	return (input % divisor + divisor) % divisor;
+}
+
+float2 scaleAroundCenter(float2 domain, float2 scale) {
+	domain -= float2(0.5,0.5);
+	domain *= scale;
+	domain += float2(0.5,0.5);
+	return domain;
+}
+
+float4 rgbaOver(float4 base, float4 over){
+    if (base.a == 0) base.rgb = over.rgb;
+    float r = (over.r * over.a) + (base.r * (1.0 - over.a));
+	float g = (over.g * over.a) + (base.g * (1.0 - over.a));
+	float b = (over.b * over.a) + (base.b * (1.0 - over.a));
+	float a = 1 - (1 - over.a) * (1 - base.a);
+	return float4(r,g,b,a);
+}
+
+float sdBox(float2 domain, float size) {
+	float2 d = abs(domain) - size;
+	return min(max(d.x, d.y), 0.0) + length(max(d, 0.0));
+}
+
+float2 idToCanvasUv(uint3 id) {
+	return float2((float)id.x / CanvasSize.x, (float)id.y/ CanvasSize.y);
+}
+
+float2 brushCanvasUvToBrushUv(float2 uv, int i)
+{
+	float4 rect = StampRect[i];
+
+	float2 rUV = uv;
+	rect.z = rect.z;	
+	rect.w = rect.w;
+
+	rUV *= float2(1.0/rect.z, 1.0/ rect.w);
+	rUV -= float2(rect.x * 1.0/rect.z, rect.y * 1.0/rect.w)  * (StampTextureSize/CanvasSize);
+
+	return rUV;
+}
+
+uint2 uvToId(float2 uv){
+	return uv * CanvasSize;
+}
+
+float2 rotate(float2 domain, float angle){
+	const float deg2rad = 0.0174533;
+
+	float s = sin(angle * deg2rad);
+	float c = cos(angle * deg2rad);
+         
+	float tx = domain.x;
+	float ty = domain.y;
+	domain.x = (c * tx) - (s * ty);
+	domain.y = (s * tx) + (c * ty);
+				
+	return domain;
+}	
+
+float2 rotateAroundCenter(float2 domain, float angle, float2 size){
+	float2 offset = float2(0.5 * size.x ,0.5 * size.y);
+	float ratio = (size.x/size.y);
+	domain -= offset;
+	domain.y *= ratio;
+	domain = rotate(domain, angle);
+	domain.y /= ratio;
+	domain += offset;
+	return domain;
+}
+
+// Main
+
+[numthreads(16,16,1)]
+void CSMain(uint3 id : SV_DispatchThreadID)
+{	
+	float2 CANVAS_TO_BRUSH =  (StampTextureSize/CanvasSize);
+	float2 BRUSH_TO_CANVAS = float2(1/CANVAS_TO_BRUSH.x, 1/CANVAS_TO_BRUSH.y);
+
+	float2 canvasUv = idToCanvasUv(id);
+	float2 brushCanvasUv = idToCanvasUv(id) *CANVAS_TO_BRUSH;
+	 
+	float4 canvas = CanvasBuffer[id.xy];
+
+	for (int i = 0; i < StampBufferSize; i++) {		
+
+		float2 brushUv = brushCanvasUvToBrushUv(brushCanvasUv, i); 
+		brushUv = rotateAroundCenter(brushUv, StampRotation[i], CANVAS_TO_BRUSH); 
+	
+		float brushRectMask = sdBox((brushUv * BRUSH_TO_CANVAS)- 0.5, 0.5f);
+				
+		if (brushRectMask > 0) {
+			Result[id.xy] = canvas;
+			continue;
+		}
+
+		float4 stamp = StampTexture[uvToId(brushUv)];	
+		stamp *= StampTint;
+		if (Subtractive == 1){
+			float4 rgba = canvas;
+			rgba.a = min(rgba.a, 1-stamp.a);
+			Result[id.xy] = rgba;
+			canvas = rgba;
+		}
+		else {
+			float4 rgba = rgbaOver(canvas, stamp);	
+			Result[id.xy] = rgba;
+			canvas = rgba;			
+		}
+	}
+}
