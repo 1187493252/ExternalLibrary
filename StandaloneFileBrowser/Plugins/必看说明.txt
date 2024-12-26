@@ -1,2 +1,2 @@
-将mcs.rsp文件放在Assets目录下
+将mcs.rsp文件放在Assets目录下(Unity2020改为csc.rsp)
 或者将System.Windows.Forms.rar解压放在Plugins目录下
