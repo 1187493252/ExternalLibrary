@@ -1,0 +1,10 @@
+{
+    "name": "com.xinchuvr.openai",
+    "displayName": "OpenAI",
+    "author": { "name": "xinchuvr", "url": "http://www.xinchuvr.com/" },
+    "version": "0.0.1",
+    "unity": "2021.3",
+    "description": "Unity connects to big data models.",
+    "keywords": [ "openai", "deepseek", "qwen" ],
+    "dependencies": {}
+}
